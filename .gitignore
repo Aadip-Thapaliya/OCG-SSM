@@ -224,6 +224,7 @@ __marimo__/
 results/**
 !results/d20_equal_training/
 results/d20_equal_training/**
+!results/d20_equal_training/protocol.yaml
 !results/d20_equal_training/reduced_proposal_v2.yaml
 !results/d20_equal_training/development_gate_summary.json
 !results/d20_equal_training/profile.json
