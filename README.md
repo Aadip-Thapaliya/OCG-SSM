@@ -182,7 +182,8 @@ OCG-SSM/
 ├── CITATION.cff
 ├── LICENSE
 ├── pyproject.toml
-└── requirements.txt
+├── requirements.txt       pinned runtime dependencies
+└── requirements-dev.txt   runtime + test dependencies
 ```
 
 ## Installation
@@ -199,7 +200,8 @@ python -m pip install -r requirements.txt
 python -m pip install -e .
 ```
 
-`requirements.txt` pins the exact versions used for the thesis. On Linux,
+`requirements.txt` pins the exact versions used for the thesis; install
+`requirements-dev.txt` instead to also get pytest. On Linux,
 the default PyTorch wheel includes CUDA libraries. For a smaller CPU-only
 install, run this before the requirements:
 
