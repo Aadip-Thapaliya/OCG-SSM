@@ -1,16 +1,54 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ocg"
+name = "ocg-ssm"
 version = "0.1.0"
+description = "Online causal-graph-conditioned state-space forecasting for multivariate time series."
+readme = "README.md"
 requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [
+  { name = "Aadip Thapaliya" },
+]
+keywords = [
+  "time series forecasting",
+  "state-space models",
+  "graph learning",
+  "granger causality",
+  "online learning",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 dependencies = [
-  "torch", "numpy", "scipy", "pandas",
-  "scikit-learn", "pyyaml", "matplotlib", "tqdm",
+  "torch",
+  "numpy",
+  "scipy",
+  "pandas",
+  "scikit-learn",
+  "pyyaml",
+  "matplotlib",
+  "tqdm",
   "psutil",
 ]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.urls]
+Homepage = "https://github.com/Aadip-Thapaliya/OCG-SSM"
+Repository = "https://github.com/Aadip-Thapaliya/OCG-SSM"
+Issues = "https://github.com/Aadip-Thapaliya/OCG-SSM/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]
