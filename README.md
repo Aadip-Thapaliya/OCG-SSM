@@ -105,11 +105,14 @@ construction and needs no DAG constraint.
 The graph is trained on its own structural objective, a masked linear VAR:
 
 ```math
-S(G) = \mathrm{mean}_t \Big\lVert x_t - \sum_{k=1}^{K} \big(A^{k} \odot W^{k}\big)\, x_{t-k} \Big\rVert_2^{2} \;+\; \lambda \sum_{k} \big\lvert A^{k} \big\rvert
+S(G) = \mathrm{mean}_{b,\,t,\,i} \Big( x_{t,i} - \sum_{k=1}^{K} \sum_{j} A^{k}_{ij}\, W^{k}_{ij}\, x_{t-k,j} \Big)^{2} \;+\; \lambda \cdot \mathrm{mean}_{k,\,i,\,j}\, A^{k}_{ij}
 ```
 
-$W^k$ are learned VAR weights and $\lambda$ is the sparsity weight. This
-gives the graph a training signal that does not depend on the forecaster.
+The first term averages the squared one-step residual over windows $b$,
+time steps $t$ and variables $i$; the second is $\lambda$ times the mean edge
+probability. $W^k$ are learned VAR weights and $\lambda$ is the sparsity
+weight. This gives the graph a training signal that does not depend on the
+forecaster.
 
 - The forecaster reads an exponential moving average (EMA) of the logits, so
   the graph it uses changes smoothly.
@@ -119,7 +122,10 @@ gives the graph a training signal that does not depend on the forecaster.
 
 `src/ocg/ssm.py` (`CausalSSMLayer`), `src/ocg/model.py` (`CausalSSM`)
 
-Each variable $i$ has its own hidden state $h_t[i]$ of size $N$:
+The SSM uses one aggregate adjacency over all lags,
+$A = 1 - \prod_{k} (1 - A^{k})$ (`GraphLearner.aggregate_adjacency`), built
+from the EMA logits. Each variable $i$ has its own hidden state $h_t[i]$ of
+size $N$:
 
 ```math
 \begin{aligned}
