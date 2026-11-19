@@ -123,8 +123,8 @@ forecaster.
 `src/ocg/ssm.py` (`CausalSSMLayer`), `src/ocg/model.py` (`CausalSSM`)
 
 The SSM uses one aggregate adjacency over all lags,
-$A = 1 - \prod_{k} (1 - A^{k})$ (`GraphLearner.aggregate_adjacency`), built
-from the EMA logits. Each variable $i$ has its own hidden state $h_t[i]$ of
+$A = 1 - \prod_{k} (1 - A^{k})$ (`CausalSSM._adjacency`); in `learned` mode
+the $A^k$ come from the EMA logits. Each variable $i$ has its own hidden state $h_t[i]$ of
 size $N$:
 
 ```math
