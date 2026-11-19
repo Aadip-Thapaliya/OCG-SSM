@@ -105,7 +105,7 @@ construction and needs no DAG constraint.
 The graph is trained on its own structural objective, a masked linear VAR:
 
 ```math
-S(G) = \operatorname{mean}_t \Big\lVert x_t - \sum_{k=1}^{K} \big(A^{k} \odot W^{k}\big)\, x_{t-k} \Big\rVert_2^{2} \;+\; \lambda \sum_{k} \big\lvert A^{k} \big\rvert
+S(G) = \mathrm{mean}_t \Big\lVert x_t - \sum_{k=1}^{K} \big(A^{k} \odot W^{k}\big)\, x_{t-k} \Big\rVert_2^{2} \;+\; \lambda \sum_{k} \big\lvert A^{k} \big\rvert
 ```
 
 $W^k$ are learned VAR weights and $\lambda$ is the sparsity weight. This
@@ -123,7 +123,7 @@ Each variable $i$ has its own hidden state $h_t[i]$ of size $N$:
 
 ```math
 \begin{aligned}
-\Delta t &= \operatorname{softplus}\big(\mathrm{Linear}([x_t[i],\, e_i])\big) \\
+\Delta t &= \mathrm{softplus}\big(\mathrm{Linear}([x_t[i],\, e_i])\big) \\
 \text{decay} &= \exp\!\big(-\Delta t \cdot \exp(\log A)\big) && \text{(diagonal)} \\
 \text{coupling}[i] &= \textstyle\sum_j A[i,j]\; W\, h_{t-1}[j] && \text{(only along graph edges)} \\
 h_t[i] &= \text{decay} \cdot h_{t-1}[i] + \text{gate} \cdot \text{coupling}[i] + \Delta t \cdot B([x_t[i], e_i])\, x_t[i] \\
