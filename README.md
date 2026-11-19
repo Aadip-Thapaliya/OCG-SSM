@@ -1,10 +1,20 @@
-# OCG-SSM: Online Causal-Graph-Conditioned State-Space Forecasting
+<!-- Figures in assets/readme/ are drawn by `python -m scripts.render_readme_art`.
+     Every number in them is copied from the tables below. -->
+<div align="center">
+
+<img src="assets/readme/hero.svg" width="100%" alt="OCG-SSM: Online Causal-Graph-Conditioned State-Space Forecasting. Bachelor's thesis, University of Europe for Applied Sciences, 2026." />
 
 [![Tests](https://github.com/Aadip-Thapaliya/OCG-SSM/actions/workflows/tests.yml/badge.svg)](https://github.com/Aadip-Thapaliya/OCG-SSM/actions/workflows/tests.yml)
 [![Citation](https://github.com/Aadip-Thapaliya/OCG-SSM/actions/workflows/citation.yml/badge.svg)](https://github.com/Aadip-Thapaliya/OCG-SSM/actions/workflows/citation.yml)
 ![Python](https://img.shields.io/badge/python-3.12-blue)
 ![PyTorch](https://img.shields.io/badge/pytorch-2.15-orange)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+![Pre-registered](https://img.shields.io/badge/protocol-pre--registered-5fb3a6)
+![Tests](https://img.shields.io/badge/pytest-96%20tests-0e1a2f)
+
+**[Highlights](#highlights)** · **[How it works](#how-it-works)** · **[Quick start](#quick-start)** · **[Results](#results)** · **[Claims](#claims-and-their-status)** · **[Reproduce](#reproducing-the-thesis)** · **[Cite](#citation)**
+
+</div>
 
 OCG-SSM is a multivariate time-series forecaster developed for a bachelor's
 thesis at the University of Europe for Applied Sciences. It learns a sparse,
@@ -14,14 +24,18 @@ written in pure PyTorch. During online forecasting the graph keeps learning,
 and a regime-switch detector speeds up graph adaptation when the
 data-generating process changes.
 
-The thesis asks a narrow question: **does conditioning a state-space
-forecaster on a learned dependency graph reduce forecast error compared with
-the same model given no cross-variable edges, all edges, or random edges, and
-does online graph adaptation help after an abrupt change?** Every experiment
-was run under a protocol that was frozen and committed before any held-out
-data was built, and negative results are reported as they came out.
+> [!IMPORTANT]
+> **Research question.** Does conditioning a state-space forecaster on a
+> learned dependency graph reduce forecast error compared with the same model
+> given no cross-variable edges, all edges, or random edges, and does online
+> graph adaptation help after an abrupt change?
+>
+> Every experiment was run under a protocol that was frozen and committed
+> before any held-out data was built, and negative results are reported as
+> they came out.
 
-## Contents
+<details>
+<summary><b>Contents</b></summary>
 
 - [Highlights](#highlights)
 - [How it works](#how-it-works)
@@ -47,7 +61,11 @@ data was built, and negative results are reported as they came out.
 - [Acknowledgements](#acknowledgements)
 - [License](#license)
 
+</details>
+
 ## Highlights
+
+<img src="assets/readme/claims.svg" width="100%" alt="12 claims tested: 5 supported, 2 partly supported, 5 not supported, grouped by stationary synthetic data, after a graph switch, and real data." />
 
 - **Learned graph helps on stationary data.** On held-out stationary
   synthetic data the learned graph beat dense, random and identity graphs at
@@ -65,25 +83,34 @@ data was built, and negative results are reported as they came out.
 
 ## How it works
 
-Notation: D variables, K lags, N state size per variable, L input window
-length, H forecast horizon.
+<img src="assets/readme/architecture.svg" width="100%" alt="Architecture: input window, RevIN, graph-conditioned SSM, lag and forecast heads, forecast. A GraphLearner supplies the adjacency mask. A structural score feeds a RegimeDetector, which boosts graph learning on detection." />
+
+Notation: $D$ variables, $K$ lags, $N$ state size per variable, $L$ input
+window length, $H$ forecast horizon.
 
 ### 1. Graph learner
 
 `src/ocg/graph.py` (`GraphLearner`)
 
-- The graph is a set of lagged logits `Lg` with shape (K, D, D). Edge
-  probabilities are `A^k = sigmoid(Lg[k] / tau)`, where `A^k[i, j]` is the
-  edge from `x_j(t-k)` to `x_i(t)`. Because every edge points forward in
-  time, the graph is acyclic by construction and needs no DAG constraint.
-- The graph is trained on its own structural objective, a masked linear VAR:
+The graph is a set of lagged logits `Lg` with shape $(K, D, D)$. Edge
+probabilities are
 
-  ```
-  S(G) = mean_t || x_t - sum_k (A^k * W^k) x_{t-k} ||^2  +  lambda * sum_k |A^k|
-  ```
+```math
+A^{k} = \sigma\!\left(\frac{L_g[k]}{\tau}\right), \qquad A^{k}_{ij} = \text{edge } x_j(t-k) \rightarrow x_i(t)
+```
 
-  `W^k` are learned VAR weights and `lambda` is the sparsity weight. This
-  gives the graph a training signal that does not depend on the forecaster.
+Because every edge points forward in time, the graph is acyclic by
+construction and needs no DAG constraint.
+
+The graph is trained on its own structural objective, a masked linear VAR:
+
+```math
+S(G) = \operatorname{mean}_t \Big\lVert x_t - \sum_{k=1}^{K} \big(A^{k} \odot W^{k}\big)\, x_{t-k} \Big\rVert_2^{2} \;+\; \lambda \sum_{k} \big\lvert A^{k} \big\rvert
+```
+
+$W^k$ are learned VAR weights and $\lambda$ is the sparsity weight. This
+gives the graph a training signal that does not depend on the forecaster.
+
 - The forecaster reads an exponential moving average (EMA) of the logits, so
   the graph it uses changes smoothly.
 - Forecast parameters and graph parameters have separate optimizers.
@@ -92,27 +119,29 @@ length, H forecast horizon.
 
 `src/ocg/ssm.py` (`CausalSSMLayer`), `src/ocg/model.py` (`CausalSSM`)
 
-Each variable i has its own hidden state `h_t[i]` of size N:
+Each variable $i$ has its own hidden state $h_t[i]$ of size $N$:
 
-```
-dt          = softplus(Linear([x_t[i], e_i]))
-decay       = exp(-dt * exp(logA))                       # diagonal
-coupling[i] = sum_j A[i, j] * W h_{t-1}[j]               # only along graph edges
-h_t[i]      = decay * h_{t-1}[i] + gate * coupling[i] + dt * B([x_t[i], e_i]) * x_t[i]
-y_t[i]      = C([x_t[i], e_i]) . h_t[i]
+```math
+\begin{aligned}
+\Delta t &= \operatorname{softplus}\big(\mathrm{Linear}([x_t[i],\, e_i])\big) \\
+\text{decay} &= \exp\!\big(-\Delta t \cdot \exp(\log A)\big) && \text{(diagonal)} \\
+\text{coupling}[i] &= \textstyle\sum_j A[i,j]\; W\, h_{t-1}[j] && \text{(only along graph edges)} \\
+h_t[i] &= \text{decay} \cdot h_{t-1}[i] + \text{gate} \cdot \text{coupling}[i] + \Delta t \cdot B([x_t[i], e_i])\, x_t[i] \\
+y_t[i] &= C([x_t[i], e_i]) \cdot h_t[i]
+\end{aligned}
 ```
 
-- `e_i` is a graph-aware node embedding built from the node's own embedding
+- $e_i$ is a graph-aware node embedding built from the node's own embedding
   and its neighbours' embeddings.
 - Before each scan the off-diagonal adjacency and the coupling projection are
-  divided by `max(1, spectral norm)`. The coupling gate is limited to the
-  decay budget left over, so cross-variable recurrence cannot blow up the
+  divided by $\max(1, \text{spectral norm})$. The coupling gate is limited to
+  the decay budget left over, so cross-variable recurrence cannot blow up the
   hidden state.
-- The scan is a plain sequential loop in PyTorch: linear in L and
-  O(D^2 N) per step. It runs on CPU; no custom kernels are needed.
+- The scan is a plain sequential loop in PyTorch: linear in $L$ and
+  $O(D^2 N)$ per step. It runs on CPU; no custom kernels are needed.
 - Input windows are normalised with reversible instance normalisation
   (RevIN). A direct lag head and a forecast head map the final state to an
-  (H, D) forecast.
+  $(H, D)$ forecast.
 
 ### 3. Regime detector and online updates
 
@@ -157,6 +186,9 @@ External baselines in `src/ocg/baselines.py`:
 
 ## Repository layout
 
+<details>
+<summary>Show the file tree</summary>
+
 ```
 OCG-SSM/
 ├── src/ocg/
@@ -171,11 +203,13 @@ OCG-SSM/
 │   └── run.py            config-driven command-line runner
 ├── tests/                pytest suite (96 tests)
 ├── configs/              YAML configs for the command-line runner
-├── scripts/              thesis stage runners (roadmap_*.py) and the export script
+├── scripts/              thesis stage runners (roadmap_*.py), the export script
+│                         and render_readme_art.py (README figures)
 ├── results/
 │   ├── roadmap/          frozen stage protocols (gates.yaml) and stage summaries
 │   ├── thesis_export_c2/ thesis tables (CSV) and figures (PNG, PDF)
 │   └── d20_equal_training/  D20 protocol files used by the tests
+├── assets/readme/        SVG figures used in this README
 ├── notebooks/            Google Colab notebook for GPU runs
 ├── data/                 ETT CSVs go here (not tracked)
 ├── .github/workflows/    CI: tests and CITATION.cff validation
@@ -185,6 +219,8 @@ OCG-SSM/
 ├── requirements.txt       pinned runtime dependencies
 └── requirements-dev.txt   runtime + test dependencies
 ```
+
+</details>
 
 ## Installation
 
@@ -201,16 +237,18 @@ python -m pip install -e .
 ```
 
 `requirements.txt` pins the exact versions used for the thesis; install
-`requirements-dev.txt` instead to also get pytest. On Linux,
-the default PyTorch wheel includes CUDA libraries. For a smaller CPU-only
-install, run this before the requirements:
+`requirements-dev.txt` instead to also get pytest.
 
-```bash
-python -m pip install torch==2.15.0 --index-url https://download.pytorch.org/whl/cpu
-```
-
-For GPU runs, install a CUDA build of PyTorch and pass `--device cuda`, or
-use the Colab notebook below.
+> [!TIP]
+> On Linux, the default PyTorch wheel includes CUDA libraries. For a smaller
+> CPU-only install, run this before the requirements:
+>
+> ```bash
+> python -m pip install torch==2.15.0 --index-url https://download.pytorch.org/whl/cpu
+> ```
+>
+> For GPU runs, install a CUDA build of PyTorch and pass `--device cuda`, or
+> use the Colab notebook in `notebooks/`.
 
 ## Quick start
 
@@ -286,12 +324,12 @@ A `model.variants` list runs several models on identical data in one call.
 
 The runner writes one JSON file with, per variant:
 
-- forecast MSE and MAE per horizon;
-- graph-recovery scores against the true graph (SHD, F1, precision,
-  recall, AUROC), aligned to the timestamp of each forecast;
-- online adaptation metrics: detection delay, sustained recovery time and
-  regret against the oracle variant;
-- efficiency: milliseconds per step, peak memory and parameter count.
+| Group | Metrics |
+|---|---|
+| Forecast | MSE and MAE per horizon |
+| Graph recovery | SHD, F1, precision, recall, AUROC against the true graph, aligned to the timestamp of each forecast |
+| Online adaptation | detection delay, sustained recovery time, regret against the oracle variant |
+| Efficiency | milliseconds per step, peak memory, parameter count |
 
 ## Tests and continuous integration
 
@@ -306,22 +344,24 @@ command-line runner and the thesis scripts. One test is skipped when
 
 GitHub Actions runs two workflows:
 
-- **Tests** (`.github/workflows/tests.yml`): installs the pinned
-  requirements with CPU PyTorch and runs `pytest` on every push to `main` and
-  every pull request.
-- **Citation** (`.github/workflows/citation.yml`): validates `CITATION.cff`
-  with `cffconvert` when it changes.
+| Workflow | When | What |
+|---|---|---|
+| **Tests** (`.github/workflows/tests.yml`) | every push to `main` and every pull request | installs the pinned requirements with CPU PyTorch and runs `pytest` |
+| **Citation** (`.github/workflows/citation.yml`) | when `CITATION.cff` changes | validates `CITATION.cff` with `cffconvert` |
 
 ## Data
 
-**Synthetic.** All synthetic stages use a sparse structural VAR generated in
-code from fixed seeds (`ocg.data.generate_svar`). Coefficients are rescaled
-so the companion spectral radius is below 0.9, innovations are
-N(0, 0.1²), and the graph can switch abruptly or blend gradually at a chosen
-time step. No download is needed.
+| | Synthetic | Real |
+|---|---|---|
+| Source | sparse structural VAR generated in code from fixed seeds (`ocg.data.generate_svar`) | ETTh1 and ETTh2 (Electricity Transformer Temperature, hourly; 7 variables) |
+| Used in | all synthetic stages | S6 |
+| Download | none needed | see below |
 
-**Real.** The S6 stage uses ETTh1 and ETTh2 (Electricity Transformer
-Temperature, hourly; 7 variables) from the ETDataset repository
+**Synthetic.** Coefficients are rescaled so the companion spectral radius is
+below 0.9, innovations are $\mathcal{N}(0, 0.1^2)$, and the graph can switch
+abruptly or blend gradually at a chosen time step.
+
+**Real.** The S6 stage uses ETTh1 and ETTh2 from the ETDataset repository
 (https://github.com/zhouhaoyi/ETDataset). Download the two files and place
 them in `data/`:
 
@@ -336,6 +376,17 @@ S6 uses a chronological train/validation/test split, and standardisation
 statistics come from the training split only.
 
 ## Evaluation protocol
+
+```mermaid
+flowchart LR
+    A["Write gates.yaml<br/>seeds, variants, pass conditions"] --> B["Commit to git"]
+    B --> C{"Stage script:<br/>file committed<br/>and unchanged?"}
+    C -- no --> X["Refuse to build<br/>held-out data"]
+    C -- yes --> D["Build held-out data<br/>with fresh seed pairs"]
+    D --> E["Train and evaluate<br/>all variants"]
+    E --> F["Paired block-bootstrap<br/>95% CI"]
+    F --> G["PASS / FAIL<br/>reported as it came out"]
+```
 
 - **Frozen gates.** Each stage has a `gates.yaml` or `protocol.yaml` under
   `results/roadmap/` that states the seeds, variants and pass conditions.
@@ -360,13 +411,20 @@ statistics come from the training split only.
 All numbers below are copied from the stage summaries; the full per-horizon
 tables are in `results/thesis_export_c2/`. H1 means horizon 1.
 
-The `status` column in those CSVs is the outcome of the whole stage, repeated
-on every row. It is not a verdict on each row. For example, `S1.csv` marks
-`oracle_lag` at H2 (1.1294) as PASS because the stage passed with the
-selected `oracle_iterated` head, not because that row meets the gate. Each
-stage's gate conditions are in its `gates.yaml` or `protocol.yaml`.
+> [!NOTE]
+> The `status` column in those CSVs is the outcome of the whole stage,
+> repeated on every row. It is not a verdict on each row. For example,
+> `S1.csv` marks `oracle_lag` at H2 (1.1294) as PASS because the stage passed
+> with the selected `oracle_iterated` head, not because that row meets the
+> gate. Each stage's gate conditions are in its `gates.yaml` or
+> `protocol.yaml`.
 
 ### Stage overview
+
+<img src="assets/readme/stages.svg" width="100%" alt="Stage map: development S1 PASS, S1b no gain, S3 PASS, S2 PASS, S2d trend; held-out S4 FAIL, S4b PASS, S4b-hard PASS; online S5 FAIL, S5b FAIL; real data S6 mixed, S6b not run." />
+
+<details>
+<summary>Stage table</summary>
 
 | Stage | Question | Outcome |
 |---|---|---|
@@ -383,7 +441,11 @@ stage's gate conditions are in its `gates.yaml` or `protocol.yaml`.
 | S6 | Real data (ETTh1, ETTh2) | learned beats dense in 3 of 4 cases; DLinear better in 3 of 4, tied in 1 |
 | S6b | Five-seed real-data follow-up | not run |
 
+</details>
+
 ### Development stages (S1-S3)
+
+<img src="assets/readme/forest-synthetic.svg" width="100%" alt="Forest plot of horizon-1 MSE ratios with 95% intervals for development stages S1, S2, S2d and held-out stages S4b, S4b-hard and S4." />
 
 | Comparison (H1) | Ratio [95% CI] |
 |---|---|
@@ -409,13 +471,13 @@ graph.
 | S4b | 0.9857 [0.9841, 0.9874] | 0.8295 [0.8227, 0.8363] | 0.8093 [0.8021, 0.8166] |
 | S4b-hard | 0.9735 [0.9715, 0.9754] | 0.8534 [0.8471, 0.8601] | 0.8518 [0.8453, 0.8588] |
 
-![Stationary held-out ratios](results/thesis_export_c2/stationary_s4b_ratios.png)
-
 The gain over the dense graph is small (1.4-2.7% at H1) but its interval is
 entirely below 1. It is larger in the data-scarce S4b-hard setting, matching
 the S2d trend. The gain fades at longer horizons.
 
 ### After a graph switch: not supported
+
+<img src="assets/readme/forest-switch.svg" width="100%" alt="Forest plot of mean-MSE differences after an abrupt graph switch for S5, S5b and pooled S5 plus S5b." />
 
 - **S4.** Held-out learned / dense H1 0.9999 [0.9974, 1.0024]. An audit
   found that the generator switches graph at t = 3600, inside the test slice
@@ -427,14 +489,15 @@ the S2d trend. The gain fades at longer horizons.
   +0.000117 [+0.000026, +0.000211], so dense adapts better.
 - **S5b** (EMA reset and replay). learned_fast minus dense online:
   +0.001084 [+0.000846, +0.001334]. The gate failed and was not retried.
-- **Pooled S5 + S5b** (10 seeds; post hoc and descriptive, not a gate). Learned with detector minus
-  dense online is +0.000496 [+0.000369, +0.000633] in the first 200 windows
-  and +0.001391 [+0.001205, +0.001574] in windows 200-495. Before the
-  switch, learned beats dense: -0.000573 [-0.000646, -0.000507].
-
-![Pooled S5 and S5b MSE before and after the switch](results/thesis_export_c2/pooled_switch_mse.png)
+- **Pooled S5 + S5b** (10 seeds; post hoc and descriptive, not a gate).
+  Learned with detector minus dense online is +0.000496 [+0.000369, +0.000633]
+  in the first 200 windows and +0.001391 [+0.001205, +0.001574] in windows
+  200-495. Before the switch, learned beats dense: -0.000573
+  [-0.000646, -0.000507].
 
 ### Real data: DLinear is mostly stronger
+
+<img src="assets/readme/forest-real.svg" width="100%" alt="Forest plot of real-data MSE ratios on ETTh1 and ETTh2 at H24 and H96: learned versus dense, identity and DLinear." />
 
 | Case | learned / dense | learned / identity | learned / DLinear |
 |---|---|---|---|
@@ -457,18 +520,21 @@ the S2d trend. The gain fades at longer horizons.
   (top-10 edge Jaccard 0.25-0.43 on ETTh1, 0-0.18 on ETTh2) and are not
   causal claims.
 
-ETTh2 H96 was first stopped after 2 of 3 seeds when the S6 compute budget ran
-out, and was reported as incomplete. It was completed later with the same
-frozen `gates.yaml`, script and seeds: the two finished seeds were reused
-unchanged and only seed 1201 was trained. The other three S6 cases did not
-change.
+> [!NOTE]
+> ETTh2 H96 was first stopped after 2 of 3 seeds when the S6 compute budget
+> ran out, and was reported as incomplete. It was completed later with the
+> same frozen `gates.yaml`, script and seeds: the two finished seeds were
+> reused unchanged and only seed 1201 was trained. The other three S6 cases
+> did not change.
 
 ### Scope
 
-- Stationary synthetic data: supported.
-- Learned graph versus dense after a switch: not supported.
-- Real data: DLinear is stronger (3 of 4 cases; tied on ETTh2 H96).
-- Online adaptation on real data: not tested.
+| Setting | Status |
+|---|---|
+| Stationary synthetic data | ✅ supported |
+| Learned graph versus dense after a switch | ❌ not supported |
+| Real data | ❌ DLinear is stronger (3 of 4 cases; tied on ETTh2 H96) |
+| Online adaptation on real data | ⚪ not tested |
 
 ## Claims and their status
 
@@ -480,30 +546,34 @@ gate passed or its 95% interval excludes no effect.
 
 | Claim | Verdict | Evidence |
 |---|---|---|
-| The learned graph recovers the true lagged graph | **Supported** (synthetic only) | Pre-switch top-edge F1 about 1.0 in S5; D20 AUROC 0.9999 and F1 0.986 in an early development diagnostic |
-| On held-out data, learned beats dense, random and identity | **Supported** | S4b and S4b-hard pass all four gate conditions; learned / dense H1 0.9857 and 0.9735, intervals below 1 |
-| The graph benefit grows as training data shrinks | **Supported** | S2d learned / dense 0.9712 with 600 training steps vs 0.9839 with 2400; S4b-hard 0.9735 vs S4b 0.9857 |
-| Learned stays within 5% of oracle on held-out data | **Partly supported** | Met on stationary S4b (1.0063) and by point estimate on S4b-hard (1.0466 [1.0422, 1.0512]); not met on the S4 slice that contains a switch (1.093) |
-| OCG-SSM matches a direct VAR | **Not supported** | learned / DirectVAR 1.035 (S2) and 1.045 (S4) |
+| The learned graph recovers the true lagged graph | ✅ **Supported** (synthetic only) | Pre-switch top-edge F1 about 1.0 in S5; D20 AUROC 0.9999 and F1 0.986 in an early development diagnostic |
+| On held-out data, learned beats dense, random and identity | ✅ **Supported** | S4b and S4b-hard pass all four gate conditions; learned / dense H1 0.9857 and 0.9735, intervals below 1 |
+| The graph benefit grows as training data shrinks | ✅ **Supported** | S2d learned / dense 0.9712 with 600 training steps vs 0.9839 with 2400; S4b-hard 0.9735 vs S4b 0.9857 |
+| Learned stays within 5% of oracle on held-out data | 🟡 **Partly supported** | Met on stationary S4b (1.0063) and by point estimate on S4b-hard (1.0466 [1.0422, 1.0512]); not met on the S4 slice that contains a switch (1.093) |
+| OCG-SSM matches a direct VAR | ❌ **Not supported** | learned / DirectVAR 1.035 (S2) and 1.045 (S4) |
 
 **After a graph switch (online)**
 
 | Claim | Verdict | Evidence |
 |---|---|---|
-| Online adaptation beats a frozen model | **Supported** | S5 learned with detector minus frozen -0.001661 [-0.001831, -0.001502] |
-| The online learned graph beats online dense | **Not supported** | S5 +0.000117 [+0.000026, +0.000211]; S5b +0.001084 [+0.000846, +0.001334]; pooled S5 + S5b also positive |
-| The learned graph tracks the new graph | **Not supported** | Top-edge F1 over the first 200 post-switch windows 0.23-0.37 (S5) and 0.27-0.44 (S5b), against about 1.0 before the switch |
-| The detector finds switches without false alarms | **Not supported** | No false alarms in 5 S5 runs, but one each in 2 of 5 S5b runs |
+| Online adaptation beats a frozen model | ✅ **Supported** | S5 learned with detector minus frozen -0.001661 [-0.001831, -0.001502] |
+| The online learned graph beats online dense | ❌ **Not supported** | S5 +0.000117 [+0.000026, +0.000211]; S5b +0.001084 [+0.000846, +0.001334]; pooled S5 + S5b also positive |
+| The learned graph tracks the new graph | ❌ **Not supported** | Top-edge F1 over the first 200 post-switch windows 0.23-0.37 (S5) and 0.27-0.44 (S5b), against about 1.0 before the switch |
+| The detector finds switches without false alarms | ❌ **Not supported** | No false alarms in 5 S5 runs, but one each in 2 of 5 S5b runs |
 
 **Real data (ETTh1, ETTh2)**
 
 | Claim | Verdict | Evidence |
 |---|---|---|
-| The learned graph helps against dense at H24 | **Supported** | ETTh1 0.9731 [0.9622, 0.9834]; ETTh2 0.9907 [0.9839, 0.9973] |
-| The learned graph helps against dense at H96 | **Partly supported** | ETTh2 0.9824 [0.9726, 0.9922]; ETTh1 0.9967 [0.9898, 1.0034], interval includes 1 |
-| OCG-SSM is competitive with strong real-data baselines | **Not supported** | OCG-SSM MSE 15-73% higher than DLinear in 3 of 4 cases; tied on ETTh2 H96 (0.9836 [0.9418, 1.0293]) |
+| The learned graph helps against dense at H24 | ✅ **Supported** | ETTh1 0.9731 [0.9622, 0.9834]; ETTh2 0.9907 [0.9839, 0.9973] |
+| The learned graph helps against dense at H96 | 🟡 **Partly supported** | ETTh2 0.9824 [0.9726, 0.9922]; ETTh1 0.9967 [0.9898, 1.0034], interval includes 1 |
+| OCG-SSM is competitive with strong real-data baselines | ❌ **Not supported** | OCG-SSM MSE 15-73% higher than DLinear in 3 of 4 cases; tied on ETTh2 H96 (0.9836 [0.9418, 1.0293]) |
 
 ## Limitations
+
+> [!WARNING]
+> The effects are small and the scope is narrow. Read the claims above with
+> these limits in mind.
 
 - **Small effects.** Significant synthetic gains over dense are 1-3%.
 - **Synthetic graph identification only.** Graph recovery is shown only on a
@@ -517,9 +587,8 @@ gate passed or its 95% interval excludes no effect.
   policy, so some models may be under-trained.
 - **Few seeds.** Three seeds for S2, S4 and S6, five for S5 and S5b.
 - **Incomplete cases.** S6b was not run. ETTh2 H96 was completed only after
-  the original S6 deadline (see Results). Online
-  adaptation on real data and other datasets (Weather, ETTm1) were not
-  evaluated.
+  the original S6 deadline (see Results). Online adaptation on real data and
+  other datasets (Weather, ETTm1) were not evaluated.
 - **Timing.** Some recorded `elapsed_seconds` values are inflated by laptop
   standby. Results are deterministic and unaffected; only those timings are
   invalid.
@@ -542,6 +611,9 @@ PDFs differ only in embedded metadata.
 several hours in total on a laptop CPU. Held-out stages only run while their
 frozen `gates.yaml` is committed and unchanged.
 
+<details>
+<summary>Commands for every table</summary>
+
 | Table | Commands |
 |---|---|
 | `S1.csv` | `python -m scripts.roadmap_s1 --stage s1` |
@@ -559,7 +631,10 @@ frozen `gates.yaml` is committed and unchanged.
 | `S5_S5b_pooled.csv`, `saturation_diagnostic.csv` | `python -m scripts.roadmap_continuation2` (reads saved outputs only) |
 | `S6b.csv` | not run; the table records this |
 
+</details>
+
 After rerunning stages, run the export command again to rebuild the tables.
+To redraw the README figures, run `python -m scripts.render_readme_art`.
 
 ## Citation
 
